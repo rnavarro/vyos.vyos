@@ -73,7 +73,7 @@ def get_config(module, flags=None, format=None):
     # return the cached device configurations. This avoids redundant calls
     # to the connection when no specific match criteria are provided.
     if _DEVICE_CONFIGS != {} and (
-        module.params["match"] is not None and module.params["match"] == "none"
+        module.params.get("match") is not None and module.params.get("match") == "none"
     ):
         return to_text(_DEVICE_CONFIGS)
     else:
