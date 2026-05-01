@@ -109,8 +109,36 @@ def load_config(module, commands, commit=False, comment=None, confirm=None):
     return response.get("diff")
 
 
+_OS_VERSION_CACHE = {}
+
+
 def get_os_version(module):
-    connection = get_connection(module)
-    if connection.get_device_info():
-        os_version = connection.get_device_info()["network_os_major_version"]
-    return os_version
+    """Return the VyOS major version string, with caching and a safe fallback.
+
+    Some Ansible persistent-connection setups make ``connection.get_device_info()``
+    raise ``ConnectionError`` ("socket path … does not exist") at the very first
+    module call, even though the persistent-connection plugin reports the listener
+    started successfully. Without this defensive wrapper, every resource module
+    that calls ``get_os_version`` during preflight (route_maps, bgp_global,
+    bgp_address_family, firewall_rules, firewall_global, ospfv2/v3,
+    ospf_interfaces, static_routes, ntp_global) fails before doing any work.
+
+    The fallback of "1.4" preserves the modern command syntax that all
+    supported VyOS releases use (1.4 GA = May 2024; the 1.3 series is EOL).
+    Results are cached per persistent-connection socket so we avoid re-paying
+    the JSON-RPC round-trip on every module invocation.
+    """
+    global _OS_VERSION_CACHE
+    cached = _OS_VERSION_CACHE.get(module._socket_path)
+    if cached:
+        return cached
+    try:
+        info = get_connection(module).get_device_info()
+    except ConnectionError:
+        info = None
+    if info:
+        version = info.get("network_os_major_version")
+        if version:
+            _OS_VERSION_CACHE[module._socket_path] = version
+            return version
+    return "1.4"
